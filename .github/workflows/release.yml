@@ -1,0 +1,200 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  compute-version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute version
+        id: version
+        run: |
+          BASE=$(cat VERSION | tr -d '[:space:]')
+          VERSION="${BASE}.${GITHUB_RUN_NUMBER}"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="v${VERSION}-${SHORT_SHA}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Version: ${VERSION}, Tag: ${TAG}"
+
+  build-cli:
+    needs: compute-version
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+          - os: ubuntu-24.04
+            rid: linux-x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Publish AOT
+        run: |
+          dotnet publish src/ClaudeRecall/ClaudeRecall.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            -p:ClaudeRecallVersion=${{ needs.compute-version.outputs.version }} \
+            -o publish/${{ matrix.rid }}
+
+      - name: Verify binary
+        run: ./publish/${{ matrix.rid }}/claude-recall --version
+
+      - name: Package
+        run: |
+          mkdir -p release
+          cd publish/${{ matrix.rid }}
+          tar -czvf ../../release/claude-recall-${{ matrix.rid }}.tar.gz claude-recall
+          cd ../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: claude-recall-${{ matrix.rid }}
+          path: release/claude-recall-${{ matrix.rid }}.tar.gz
+
+  release:
+    needs: [compute-version, build-cli]
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ needs.compute-version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la release/
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ needs.compute-version.outputs.tag }}" \
+            --title "claude-recall ${{ needs.compute-version.outputs.version }}" \
+            --notes "Release ${{ needs.compute-version.outputs.version }}" \
+            --latest \
+            release/*.tar.gz
+
+  update-homebrew:
+    needs: [compute-version, release]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Compute SHA256 sums
+        id: sha
+        run: |
+          echo "osx_arm64=$(sha256sum release/claude-recall-osx-arm64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "osx_x64=$(sha256sum release/claude-recall-osx-x64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64=$(sha256sum release/claude-recall-linux-arm64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "linux_x64=$(sha256sum release/claude-recall-linux-x64.tar.gz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH for homebrew-tap
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$HOMEBREW_TAP_DEPLOY_KEY" > ~/.ssh/homebrew_tap_key
+          chmod 600 ~/.ssh/homebrew_tap_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<SSHEOF
+          Host github.com-homebrew-tap
+            HostName github.com
+            User git
+            IdentityFile ~/.ssh/homebrew_tap_key
+            IdentitiesOnly yes
+          SSHEOF
+
+      - name: Update Homebrew formula
+        env:
+          VERSION: ${{ needs.compute-version.outputs.version }}
+          TAG: ${{ needs.compute-version.outputs.tag }}
+          SHA_OSX_ARM64: ${{ steps.sha.outputs.osx_arm64 }}
+          SHA_OSX_X64: ${{ steps.sha.outputs.osx_x64 }}
+          SHA_LINUX_ARM64: ${{ steps.sha.outputs.linux_arm64 }}
+          SHA_LINUX_X64: ${{ steps.sha.outputs.linux_x64 }}
+        run: |
+          git clone git@github.com-homebrew-tap:GordonBeeming/homebrew-tap.git /tmp/homebrew-tap
+
+          cat > /tmp/homebrew-tap/Formula/claude-recall.rb <<FORMULA
+          # typed: false
+          # frozen_string_literal: true
+
+          class ClaudeRecall < Formula
+            desc "AI-powered TUI to search Claude Code session history"
+            homepage "https://github.com/GordonBeeming/claude-recall"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/GordonBeeming/claude-recall/releases/download/${TAG}/claude-recall-osx-arm64.tar.gz"
+                sha256 "${SHA_OSX_ARM64}"
+              else
+                url "https://github.com/GordonBeeming/claude-recall/releases/download/${TAG}/claude-recall-osx-x64.tar.gz"
+                sha256 "${SHA_OSX_X64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.arm?
+                url "https://github.com/GordonBeeming/claude-recall/releases/download/${TAG}/claude-recall-linux-arm64.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              else
+                url "https://github.com/GordonBeeming/claude-recall/releases/download/${TAG}/claude-recall-linux-x64.tar.gz"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              bin.install "claude-recall"
+            end
+
+            test do
+              assert_match version.to_s, shell_output("#{bin}/claude-recall --version")
+            end
+          end
+          FORMULA
+
+          # Strip leading whitespace from heredoc
+          sed -i 's/^          //' /tmp/homebrew-tap/Formula/claude-recall.rb
+
+          cd /tmp/homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/claude-recall.rb
+          git diff --cached --quiet || {
+            git commit -m "Update claude-recall to ${VERSION}"
+            git push origin main
+          }

@@ -1,3 +1,4 @@
+using System.Reflection;
 using ClaudeRecall.Models;
 using ClaudeRecall.Services;
 using ClaudeRecall.Tui;
@@ -34,7 +35,11 @@ for (int i = 0; i < args.Length; i++)
             AnsiConsole.MarkupLine("  --help, -h    Show this help");
             return 0;
         case "--version":
-            AnsiConsole.MarkupLine("claude-recall 0.1.0");
+            var infoVersion = Assembly.GetExecutingAssembly()
+                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "dev";
+            // Strip the +commithash suffix that .NET appends
+            var version = infoVersion.Split('+')[0];
+            AnsiConsole.MarkupLine($"claude-recall {version}");
             return 0;
         default:
             if (!args[i].StartsWith('-'))

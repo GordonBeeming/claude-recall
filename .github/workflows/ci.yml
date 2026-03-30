@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            rid: linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+          - os: macos-15-intel
+            rid: osx-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: dotnet build src/ClaudeRecall/ClaudeRecall.csproj -c Release
+
+      - name: Publish AOT
+        run: |
+          dotnet publish src/ClaudeRecall/ClaudeRecall.csproj \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            -o publish/${{ matrix.rid }}
+
+      - name: Verify binary
+        run: ./publish/${{ matrix.rid }}/claude-recall --version
