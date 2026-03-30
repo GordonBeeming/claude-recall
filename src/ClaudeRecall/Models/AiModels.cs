@@ -28,3 +28,9 @@ public sealed class AiSessionCandidate
     [JsonPropertyName("reason")]
     public string Reason { get; set; } = "";
 }
+
+public sealed class AiSummaryResponse
+{
+    [JsonPropertyName("summaries")]
+    public Dictionary<string, string> Summaries { get; set; } = new();
+}

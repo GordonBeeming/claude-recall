@@ -5,16 +5,9 @@ namespace ClaudeRecall.Tui;
 
 public static class SearchView
 {
-    public static void RenderResults(List<SearchResult> results, string query)
+    public static void RenderResults(List<SearchResult> results, string query, bool verbose)
     {
-        if (results.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[red]No matching sessions found.[/]");
-            return;
-        }
-
-        AnsiConsole.MarkupLine($"[green]Found {results.Count} matching session chain(s)[/]");
-        AnsiConsole.WriteLine();
+        if (!verbose) return;
 
         for (int i = 0; i < results.Count; i++)
         {
@@ -32,9 +25,10 @@ public static class SearchView
 
         var projectLabel = ShortenPath(chain.ProjectPath ?? chain.ProjectDir);
         var dateRange = FormatDateRange(chain.FirstTimestamp, chain.LastTimestamp);
+        var title = GetSessionTitle(chain);
 
         var tree = new Tree(
-            new Markup($"[blue bold]#{index}[/] [bold]{Markup.Escape(chain.Slug)}[/] " +
+            new Markup($"[blue bold]#{index}[/] [bold]{Markup.Escape(title)}[/] " +
                        $"[grey]({projectLabel})[/] " +
                        $"[grey50]{dateRange}[/] " +
                        $"[green]{totalMatches} match(es)[/]"));
@@ -53,7 +47,7 @@ public static class SearchView
             var match = result.Matches.FirstOrDefault(m => m.Session.SessionId == session.SessionId);
             var matchInfo = match is not null ? $" ({match.TotalMatches} matches)" : "";
 
-            var ts = session.FirstTimestamp?.ToString("yyyy-MM-dd HH:mm") ?? "?";
+            var ts = FormatFriendlyDate(session.FirstTimestamp);
             var msgs = session.MessageCount;
             var escapedPosition = Markup.Escape($"[{position}]");
 
@@ -91,27 +85,70 @@ public static class SearchView
 
     public static int? PromptForAction(List<SearchResult> results)
     {
-        var choices = new List<string>();
+        var choiceMap = new Dictionary<string, int>();
+        var choiceList = new List<string>();
 
         for (int i = 0; i < results.Count; i++)
         {
             var r = results[i];
-            var label = $"#{i + 1} {r.Chain.Slug} ({r.Matches.Sum(m => m.TotalMatches)} matches)";
-            choices.Add(label);
+            var chain = r.Chain;
+            var title = GetSessionTitle(chain);
+            var first = FormatFriendlyDate(chain.FirstTimestamp);
+            var last = FormatFriendlyDate(chain.LastTimestamp);
+            var dateInfo = chain.FirstTimestamp?.Date == chain.LastTimestamp?.Date
+                ? first
+                : $"{first} - {last}";
+
+            var line1 = $"#{i + 1} {Markup.Escape(title)}  [grey]{dateInfo}  ({chain.TotalMessages} msgs)[/]";
+
+            var description = GetChainDescription(chain, 200);
+            var line2 = description is not null ? $"   [grey]{Markup.Escape(description)}[/]" : "";
+
+            var aiReason = r.AiReason is { Length: > 0 } ? $"   [mediumpurple1]AI: {Markup.Escape(r.AiReason)}[/]" : "";
+
+            var parts = new List<string> { line1 };
+            if (line2.Length > 0) parts.Add(line2);
+            if (aiReason.Length > 0) parts.Add(aiReason);
+
+            var label = string.Join("\n", parts);
+            choiceList.Add(label);
+            choiceMap[label] = i;
         }
 
-        choices.Add("[Exit]");
+        var exitLabel = Markup.Escape("[Exit]");
+        choiceList.Add(exitLabel);
 
         var selected = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
-                .Title("[bold]Select a session chain to explore:[/]")
+                .Title("[bold]Select a session to explore:[/]")
                 .PageSize(15)
-                .AddChoices(choices));
+                .AddChoices(choiceList));
 
-        if (selected == "[Exit]") return null;
+        if (selected == exitLabel) return null;
 
-        var idx = choices.IndexOf(selected);
-        return idx >= 0 && idx < results.Count ? idx : null;
+        return choiceMap.TryGetValue(selected, out var idx) ? idx : null;
+    }
+
+    private static string GetSessionTitle(SessionChain chain)
+    {
+        // Prefer AI summary, fall back to slug
+        var aiSummary = chain.Sessions
+            .Select(s => s.AiSummary)
+            .FirstOrDefault(s => s is not null);
+
+        return aiSummary ?? chain.Slug;
+    }
+
+    private static string? GetChainDescription(SessionChain chain, int maxLength = 80)
+    {
+        var firstMsg = chain.Sessions
+            .Select(s => s.FirstUserMessage)
+            .FirstOrDefault(m => m is not null);
+
+        if (firstMsg is null) return null;
+
+        var firstLine = firstMsg.ReplaceLineEndings(" ").Trim();
+        return firstLine.Length > maxLength ? firstLine[..maxLength] + "..." : firstLine;
     }
 
     private static string ShortenPath(string path)
@@ -122,11 +159,19 @@ public static class SearchView
         return path;
     }
 
+    private static string FormatFriendlyDate(DateTimeOffset? dt)
+    {
+        if (dt is null) return "?";
+        var local = dt.Value.ToLocalTime();
+        var format = local.Year == DateTimeOffset.Now.Year ? "dd MMM HH:mm" : "dd MMM yyyy HH:mm";
+        return local.ToString(format);
+    }
+
     private static string FormatDateRange(DateTimeOffset? first, DateTimeOffset? last)
     {
         if (first is null) return "";
         if (last is null || first.Value.Date == last.Value.Date)
-            return first.Value.ToString("yyyy-MM-dd");
-        return $"{first.Value:yyyy-MM-dd} to {last.Value:yyyy-MM-dd}";
+            return FormatFriendlyDate(first);
+        return $"{FormatFriendlyDate(first)} to {FormatFriendlyDate(last)}";
     }
 }

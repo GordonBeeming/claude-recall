@@ -45,6 +45,51 @@ public static class ClaudeAiService
         return FallbackPatterns(userQuery);
     }
 
+    public static async Task<Dictionary<string, string>> GenerateSessionSummaries(
+        List<(string sessionId, string firstUserMessage)> sessions)
+    {
+        if (sessions.Count == 0) return new();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Generate a brief 5-10 word description for each Claude Code session based on what the user was working on.");
+        sb.AppendLine("Focus on the task/topic, not the tools used.");
+        sb.AppendLine();
+
+        foreach (var (id, msg) in sessions)
+        {
+            var preview = msg.Length > 300 ? msg[..300] : msg;
+            sb.AppendLine($"--- Session {id} ---");
+            sb.AppendLine(preview);
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("""
+        Return ONLY a JSON object with a "summaries" object mapping sessionId to description string.
+        Example: {"summaries": {"abc123": "Fix auth bug in login flow", "def456": "Add dark mode toggle"}}
+        """);
+
+        var result = await RunClaude(sb.ToString());
+        if (string.IsNullOrEmpty(result)) return new();
+
+        try
+        {
+            var jsonStart = result.IndexOf('{');
+            var jsonEnd = result.LastIndexOf('}');
+            if (jsonStart >= 0 && jsonEnd > jsonStart)
+            {
+                var json = result[jsonStart..(jsonEnd + 1)];
+                var response = JsonSerializer.Deserialize(json, SourceGenerationContext.Default.AiSummaryResponse);
+                return response?.Summaries ?? new();
+            }
+        }
+        catch (JsonException)
+        {
+            // Return empty on parse failure
+        }
+
+        return new();
+    }
+
     public static async Task<List<AiSessionCandidate>> ValidateCandidates(
         string userQuery,
         List<(string sessionId, string summary)> candidates)
@@ -98,7 +143,7 @@ public static class ClaudeAiService
             var psi = new ProcessStartInfo
             {
                 FileName = "claude",
-                ArgumentList = { "-p", prompt, "--output-format", "text" },
+                ArgumentList = { "-p", prompt, "--output-format", "text", "--no-session-persistence", "--model", "haiku" },
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

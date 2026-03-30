@@ -6,6 +6,7 @@ public sealed class SearchResult
     public required List<SessionMatch> Matches { get; init; }
     public string? AiReason { get; set; }
     public double AiConfidence { get; set; }
+    public bool? AiMatches { get; set; }
 }
 
 public sealed class SessionMatch

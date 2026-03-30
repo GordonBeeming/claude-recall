@@ -56,7 +56,7 @@ public static class SearchEngine
         });
 
         return results
-            .OrderByDescending(r => r.Matches.Sum(m => m.TotalMatches))
+            .OrderByDescending(r => r.Chain.LastTimestamp ?? DateTimeOffset.MinValue)
             .ToList();
     }
 
