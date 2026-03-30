@@ -77,13 +77,15 @@ public static class SessionDetailView
                 .Title("[bold]Action:[/]")
                 .AddChoices(choices));
 
+        var projectPath = chain.ProjectPath ?? chain.ProjectDir;
+
         if (selected.StartsWith("Resume matched"))
         {
-            ResumeSession(result.Matches[0].Session.SessionId);
+            ResumeSession(result.Matches[0].Session.SessionId, projectPath);
         }
         else if (selected.StartsWith("Resume latest"))
         {
-            ResumeSession(chain.Sessions[^1].SessionId);
+            ResumeSession(chain.Sessions[^1].SessionId, projectPath);
         }
         else if (selected.StartsWith("Copy"))
         {
@@ -97,9 +99,9 @@ public static class SessionDetailView
         }
     }
 
-    private static void ResumeSession(string sessionId)
+    private static void ResumeSession(string sessionId, string projectPath)
     {
-        AnsiConsole.MarkupLine($"[yellow]Launching claude --resume {sessionId}...[/]");
+        AnsiConsole.MarkupLine($"[yellow]Launching claude --resume {sessionId} in {Markup.Escape(projectPath)}...[/]");
 
         try
         {
@@ -107,6 +109,7 @@ public static class SessionDetailView
             {
                 FileName = "claude",
                 ArgumentList = { "--resume", sessionId },
+                WorkingDirectory = projectPath,
                 UseShellExecute = false,
             };
 
