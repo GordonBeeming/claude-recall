@@ -53,7 +53,7 @@ public static class SearchView
             var match = result.Matches.FirstOrDefault(m => m.Session.SessionId == session.SessionId);
             var matchInfo = match is not null ? $" ({match.TotalMatches} matches)" : "";
 
-            var ts = session.FirstTimestamp?.ToString("yyyy-MM-dd HH:mm") ?? "?";
+            var ts = FormatFriendlyDate(session.FirstTimestamp);
             var msgs = session.MessageCount;
             var escapedPosition = Markup.Escape($"[{position}]");
 
@@ -99,15 +99,15 @@ public static class SearchView
         {
             var r = results[i];
             var chain = r.Chain;
-            var first = chain.FirstTimestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "?";
-            var last = chain.LastTimestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "?";
+            var first = FormatFriendlyDate(chain.FirstTimestamp);
+            var last = FormatFriendlyDate(chain.LastTimestamp);
             var dateInfo = chain.FirstTimestamp?.Date == chain.LastTimestamp?.Date
                 ? first
                 : $"{first} - {last}";
 
             var line1 = $"#{i + 1} {Markup.Escape(chain.Slug)}  {dateInfo}  ({chain.TotalMessages} msgs)";
 
-            var description = GetChainDescription(chain, 120);
+            var description = GetChainDescription(chain, 200);
             var line2 = description is not null ? $"   [grey]{Markup.Escape(description)}[/]" : "";
 
             var aiReason = r.AiReason is { Length: > 0 } ? $"   [mediumpurple1]AI: {Markup.Escape(r.AiReason)}[/]" : "";
@@ -155,11 +155,19 @@ public static class SearchView
         return path;
     }
 
+    private static string FormatFriendlyDate(DateTimeOffset? dt)
+    {
+        if (dt is null) return "?";
+        var local = dt.Value.ToLocalTime();
+        var format = local.Year == DateTimeOffset.Now.Year ? "dd MMM HH:mm" : "dd MMM yyyy HH:mm";
+        return local.ToString(format);
+    }
+
     private static string FormatDateRange(DateTimeOffset? first, DateTimeOffset? last)
     {
         if (first is null) return "";
         if (last is null || first.Value.Date == last.Value.Date)
-            return first.Value.ToString("yyyy-MM-dd");
-        return $"{first.Value:yyyy-MM-dd} to {last.Value:yyyy-MM-dd}";
+            return FormatFriendlyDate(first);
+        return $"{FormatFriendlyDate(first)} to {FormatFriendlyDate(last)}";
     }
 }

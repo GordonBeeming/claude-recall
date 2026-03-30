@@ -118,8 +118,11 @@ public static class SessionScanner
                         if (firstUserMessage is null && msg.Type == "user")
                         {
                             var (_, text) = TextExtractor.Extract(msg);
-                            if (!string.IsNullOrWhiteSpace(text))
-                                firstUserMessage = text.Length > 300 ? text[..300] : text;
+                            if (string.IsNullOrWhiteSpace(text)) continue;
+
+                            var cleaned = CleanUserMessage(text);
+                            if (cleaned is not null)
+                                firstUserMessage = cleaned.Length > 500 ? cleaned[..500] : cleaned;
                         }
                     }
                 }
@@ -214,6 +217,58 @@ public static class SessionScanner
         {
             // Non-critical, ignore
         }
+    }
+
+    /// <summary>
+    /// Returns cleaned user message text, or null if it's a system/internal message to skip.
+    /// For command invocations, returns the command as the user typed it (e.g. "/skill-name args").
+    /// </summary>
+    private static string? CleanUserMessage(string text)
+    {
+        var trimmed = text.TrimStart();
+
+        if (!trimmed.StartsWith('<'))
+            return trimmed;
+
+        // Extract slash commands: <command-name>/foo</command-name> <command-args>bar</command-args>
+        if (trimmed.Contains("<command-name>"))
+        {
+            var cmdName = ExtractTagContent(trimmed, "command-name");
+            var cmdArgs = ExtractTagContent(trimmed, "command-args");
+
+            if (cmdName is not null)
+            {
+                return cmdArgs is { Length: > 0 } ? $"{cmdName} {cmdArgs}" : cmdName;
+            }
+        }
+
+        // Skip known internal prefixes
+        string[] skipPrefixes =
+        [
+            "<local-command-caveat>",
+            "<system-reminder>",
+            "<user-prompt-submit-hook>",
+        ];
+
+        foreach (var prefix in skipPrefixes)
+        {
+            if (trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return null;
+        }
+
+        return trimmed;
+    }
+
+    private static string? ExtractTagContent(string text, string tagName)
+    {
+        var open = $"<{tagName}>";
+        var close = $"</{tagName}>";
+        var start = text.IndexOf(open, StringComparison.Ordinal);
+        if (start < 0) return null;
+        start += open.Length;
+        var end = text.IndexOf(close, start, StringComparison.Ordinal);
+        if (end < 0) return null;
+        return text[start..end].Trim();
     }
 
     private static string DecodeProjectPath(string dirName)
