@@ -8,7 +8,7 @@ using Spectre.Console;
 var query = "";
 var regexMode = false;
 var noAi = false;
-string? projectFilter = null;
+var allProjects = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -20,8 +20,8 @@ for (int i = 0; i < args.Length; i++)
         case "--no-ai":
             noAi = true;
             break;
-        case "--project" when i + 1 < args.Length:
-            projectFilter = args[++i];
+        case "--all-projects":
+            allProjects = true;
             break;
         case "--help" or "-h":
             AnsiConsole.MarkupLine("[bold]claude-recall[/] — Search your Claude Code session history");
@@ -29,11 +29,11 @@ for (int i = 0; i < args.Length; i++)
             AnsiConsole.MarkupLine("[bold]Usage:[/] claude-recall <query> <options>");
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[bold]Options:[/]");
-            AnsiConsole.MarkupLine("  --regex       Raw regex search (skip AI term generation)");
-            AnsiConsole.MarkupLine("  --no-ai       Skip all AI features");
-            AnsiConsole.MarkupLine("  --project X   Filter to sessions in projects matching X");
-            AnsiConsole.MarkupLine("  --help, -h    Show this help");
-            AnsiConsole.MarkupLine("  --version     Show version information");
+            AnsiConsole.MarkupLine("  --regex         Raw regex search (skip AI term generation)");
+            AnsiConsole.MarkupLine("  --no-ai         Skip all AI features");
+            AnsiConsole.MarkupLine("  --all-projects  Search all projects (default: current project only)");
+            AnsiConsole.MarkupLine("  --help, -h      Show this help");
+            AnsiConsole.MarkupLine("  --version       Show version information");
             return 0;
         case "--version":
             var infoVersion = Assembly.GetExecutingAssembly()
@@ -70,11 +70,15 @@ await AnsiConsole.Status()
         sessions = SessionScanner.ScanAll();
     });
 
-if (projectFilter is { Length: > 0 })
+if (!allProjects)
 {
+    var cwd = Environment.CurrentDirectory;
     sessions = sessions
-        .Where(s => (s.ProjectPath ?? s.ProjectDir)
-            .Contains(projectFilter, StringComparison.OrdinalIgnoreCase))
+        .Where(s =>
+        {
+            var projectPath = s.ProjectPath ?? s.ProjectDir;
+            return cwd.StartsWith(projectPath, StringComparison.Ordinal);
+        })
         .ToList();
 }
 
