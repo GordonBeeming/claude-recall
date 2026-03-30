@@ -22,7 +22,8 @@ jobs:
           BASE=$(cat VERSION | tr -d '[:space:]')
           VERSION="${BASE}.${GITHUB_RUN_NUMBER}"
           SHORT_SHA=$(git rev-parse --short HEAD)
-          TAG="v${VERSION}-${SHORT_SHA}"
+          ATTEMPT="${GITHUB_RUN_ATTEMPT:-1}"
+          TAG="v${VERSION}-${SHORT_SHA}-a${ATTEMPT}"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Version: ${VERSION}, Tag: ${TAG}"
