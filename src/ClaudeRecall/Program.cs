@@ -33,6 +33,7 @@ for (int i = 0; i < args.Length; i++)
             AnsiConsole.MarkupLine("  --no-ai       Skip all AI features");
             AnsiConsole.MarkupLine("  --project X   Filter to sessions in projects matching X");
             AnsiConsole.MarkupLine("  --help, -h    Show this help");
+            AnsiConsole.MarkupLine("  --version     Show version information");
             return 0;
         case "--version":
             var infoVersion = Assembly.GetExecutingAssembly()
