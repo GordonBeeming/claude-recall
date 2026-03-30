@@ -9,6 +9,7 @@ var query = "";
 var regexMode = false;
 var noAi = false;
 var allProjects = false;
+var verbose = false;
 var days = 7;
 
 for (int i = 0; i < args.Length; i++)
@@ -24,6 +25,9 @@ for (int i = 0; i < args.Length; i++)
         case "--all-projects":
             allProjects = true;
             break;
+        case "--verbose":
+            verbose = true;
+            break;
         case "--days" when i + 1 < args.Length && int.TryParse(args[i + 1], out var d):
             days = d;
             i++;
@@ -38,6 +42,7 @@ for (int i = 0; i < args.Length; i++)
             AnsiConsole.MarkupLine("  --no-ai         Skip all AI features");
             AnsiConsole.MarkupLine("  --all-projects  Search all projects (default: current project only)");
             AnsiConsole.MarkupLine("  --days N        Search last N days (default: 7)");
+            AnsiConsole.MarkupLine("  --verbose       Show detailed progress information");
             AnsiConsole.MarkupLine("  --help, -h      Show this help");
             AnsiConsole.MarkupLine("  --version       Show version information");
             return 0;
@@ -93,11 +98,18 @@ sessions = sessions
     .Where(s => (s.LastTimestamp ?? s.FirstTimestamp ?? DateTimeOffset.MinValue) >= cutoff)
     .ToList();
 
-AnsiConsole.MarkupLine($"[grey]Found {sessions.Count} sessions across {sessions.Select(s => s.ProjectDir).Distinct().Count()} projects (last {days} days)[/]");
+if (verbose)
+{
+    AnsiConsole.MarkupLine($"[grey]Found {sessions.Count} sessions across {sessions.Select(s => s.ProjectDir).Distinct().Count()} projects (last {days} days)[/]");
+}
 
 // Step 2: Build chains
 var chains = ChainBuilder.Build(sessions);
-AnsiConsole.MarkupLine($"[grey]{chains.Count} session chains[/]");
+
+if (verbose)
+{
+    AnsiConsole.MarkupLine($"[grey]{chains.Count} session chains[/]");
+}
 
 // Step 3: Generate search patterns
 List<string> patterns;
@@ -105,16 +117,18 @@ List<string> patterns;
 if (regexMode || noAi)
 {
     patterns = [query];
-    AnsiConsole.MarkupLine($"[grey]Regex mode: searching for \"{Markup.Escape(query)}\"[/]");
+    if (verbose)
+        AnsiConsole.MarkupLine($"[grey]Regex mode: searching for \"{Markup.Escape(query)}\"[/]");
 }
 else
 {
     patterns = await AnsiConsole.Status()
         .Spinner(Spinner.Known.Dots)
-        .StartAsync("[blue]AI generating search terms...[/]", async _ =>
+        .StartAsync("[blue]Generating search terms...[/]", async _ =>
             await ClaudeAiService.GenerateSearchTerms(query));
 
-    AnsiConsole.MarkupLine($"[grey]Search patterns: {string.Join(", ", patterns.Select(p => Markup.Escape(p)))}[/]");
+    if (verbose)
+        AnsiConsole.MarkupLine($"[grey]Search patterns: {string.Join(", ", patterns.Select(p => Markup.Escape(p)))}[/]");
 }
 
 // Step 4: Search
@@ -128,7 +142,10 @@ await AnsiConsole.Status()
         results = SearchEngine.Search(chains, patterns);
     });
 
-AnsiConsole.MarkupLine($"[grey]{results.Count} matching chains[/]");
+if (verbose)
+{
+    AnsiConsole.MarkupLine($"[grey]{results.Count} matching chains[/]");
+}
 
 // Step 5: AI validation (if enabled and we have results to narrow down)
 if (!regexMode && !noAi && results.Count > 3)
@@ -150,7 +167,7 @@ if (!regexMode && !noAi && results.Count > 3)
 
     var validated = await AnsiConsole.Status()
         .Spinner(Spinner.Known.Dots)
-        .StartAsync("[blue]AI validating matches...[/]", async _ =>
+        .StartAsync("[blue]Validating matches...[/]", async _ =>
             await ClaudeAiService.ValidateCandidates(query, candidates));
 
     if (validated.Count > 0)
@@ -178,12 +195,47 @@ if (!regexMode && !noAi && results.Count > 3)
     }
 }
 
+// Step 6: Generate AI summaries for sessions that don't have one yet
+if (!regexMode && !noAi)
+{
+    var allSessions = results.SelectMany(r => r.Chain.Sessions).ToList();
+    var needsSummary = allSessions
+        .Where(s => s.AiSummary is null && s.FirstUserMessage is not null)
+        .Select(s => (s.SessionId, s.FirstUserMessage!))
+        .ToList();
+
+    if (needsSummary.Count > 0)
+    {
+        var summaries = await AnsiConsole.Status()
+            .Spinner(Spinner.Known.Dots)
+            .StartAsync("[blue]Summarizing sessions...[/]", async _ =>
+                await ClaudeAiService.GenerateSessionSummaries(needsSummary));
+
+        foreach (var session in allSessions)
+        {
+            if (summaries.TryGetValue(session.SessionId, out var summary))
+            {
+                session.AiSummary = summary;
+            }
+        }
+
+        SessionScanner.UpdateSummariesInCache(allSessions);
+    }
+}
+
+if (results.Count == 0)
+{
+    AnsiConsole.MarkupLine("[red]No matching sessions found.[/]");
+    return 0;
+}
+
+AnsiConsole.MarkupLine($"[green]Found {results.Count} matching session(s)[/]");
 AnsiConsole.WriteLine();
 
-// Step 6: Display results
-SearchView.RenderResults(results, query);
+// Step 7: Display results
+SearchView.RenderResults(results, query, verbose);
 
-// Step 7: Interactive selection
+// Step 8: Interactive selection
 while (true)
 {
     var selected = SearchView.PromptForAction(results);

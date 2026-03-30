@@ -30,6 +30,9 @@ public sealed class SessionCacheEntry
 
     [JsonPropertyName("messageCount")]
     public int MessageCount { get; set; }
+
+    [JsonPropertyName("aiSummary")]
+    public string? AiSummary { get; set; }
 }
 
 public sealed class SessionCache

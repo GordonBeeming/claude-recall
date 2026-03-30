@@ -168,6 +168,7 @@ public static class SessionScanner
             FirstTimestamp = cached.FirstTimestamp is not null ? DateTimeOffset.Parse(cached.FirstTimestamp) : null,
             LastTimestamp = cached.LastTimestamp is not null ? DateTimeOffset.Parse(cached.LastTimestamp) : null,
             MessageCount = cached.MessageCount,
+            AiSummary = cached.AiSummary,
         };
     }
 
@@ -184,7 +185,38 @@ public static class SessionScanner
             FirstTimestamp = info.FirstTimestamp?.ToString("o"),
             LastTimestamp = info.LastTimestamp?.ToString("o"),
             MessageCount = info.MessageCount,
+            AiSummary = info.AiSummary,
         };
+    }
+
+    /// <summary>
+    /// Update cached AI summaries for sessions and persist to disk.
+    /// </summary>
+    public static void UpdateSummariesInCache(List<SessionInfo> sessions)
+    {
+        var cache = LoadCache();
+        var changed = false;
+
+        foreach (var session in sessions)
+        {
+            if (session.AiSummary is null) continue;
+            var projectDirName = Path.GetFileName(session.ProjectDir);
+            var cacheKey = $"{projectDirName}/{session.SessionId}";
+
+            if (cache.Entries.TryGetValue(cacheKey, out var entry))
+            {
+                if (entry.AiSummary != session.AiSummary)
+                {
+                    entry.AiSummary = session.AiSummary;
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+        {
+            SaveCache(cache);
+        }
     }
 
     private static SessionCache LoadCache()

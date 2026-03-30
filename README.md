@@ -46,6 +46,7 @@ If no query is provided, you'll be prompted for one interactively.
 | `--no-ai` | Skip all AI features (works without Claude installed) |
 | `--all-projects` | Search all projects (default: current project only) |
 | `--days N` | Search last N days (default: 7) |
+| `--verbose` | Show detailed progress and debug info |
 | `--help`, `-h` | Show help |
 | `--version` | Show version |
 

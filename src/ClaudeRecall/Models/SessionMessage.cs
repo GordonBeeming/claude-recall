@@ -54,6 +54,7 @@ public sealed class SessionMessage
 [JsonSerializable(typeof(AiSearchTermsResponse))]
 [JsonSerializable(typeof(AiValidationResponse))]
 [JsonSerializable(typeof(AiSessionCandidate))]
+[JsonSerializable(typeof(AiSummaryResponse))]
 [JsonSerializable(typeof(SessionCache))]
 [JsonSerializable(typeof(SessionCacheEntry))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]

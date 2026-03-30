@@ -12,4 +12,5 @@ public sealed class SessionInfo
     public DateTimeOffset? FirstTimestamp { get; init; }
     public DateTimeOffset? LastTimestamp { get; init; }
     public int MessageCount { get; init; }
+    public string? AiSummary { get; set; }
 }

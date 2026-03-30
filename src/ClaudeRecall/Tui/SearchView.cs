@@ -5,16 +5,9 @@ namespace ClaudeRecall.Tui;
 
 public static class SearchView
 {
-    public static void RenderResults(List<SearchResult> results, string query)
+    public static void RenderResults(List<SearchResult> results, string query, bool verbose)
     {
-        if (results.Count == 0)
-        {
-            AnsiConsole.MarkupLine("[red]No matching sessions found.[/]");
-            return;
-        }
-
-        AnsiConsole.MarkupLine($"[green]Found {results.Count} matching session chain(s)[/]");
-        AnsiConsole.WriteLine();
+        if (!verbose) return;
 
         for (int i = 0; i < results.Count; i++)
         {
@@ -32,9 +25,10 @@ public static class SearchView
 
         var projectLabel = ShortenPath(chain.ProjectPath ?? chain.ProjectDir);
         var dateRange = FormatDateRange(chain.FirstTimestamp, chain.LastTimestamp);
+        var title = GetSessionTitle(chain);
 
         var tree = new Tree(
-            new Markup($"[blue bold]#{index}[/] [bold]{Markup.Escape(chain.Slug)}[/] " +
+            new Markup($"[blue bold]#{index}[/] [bold]{Markup.Escape(title)}[/] " +
                        $"[grey]({projectLabel})[/] " +
                        $"[grey50]{dateRange}[/] " +
                        $"[green]{totalMatches} match(es)[/]"));
@@ -92,20 +86,20 @@ public static class SearchView
     public static int? PromptForAction(List<SearchResult> results)
     {
         var choiceMap = new Dictionary<string, int>();
-
         var choiceList = new List<string>();
 
         for (int i = 0; i < results.Count; i++)
         {
             var r = results[i];
             var chain = r.Chain;
+            var title = GetSessionTitle(chain);
             var first = FormatFriendlyDate(chain.FirstTimestamp);
             var last = FormatFriendlyDate(chain.LastTimestamp);
             var dateInfo = chain.FirstTimestamp?.Date == chain.LastTimestamp?.Date
                 ? first
                 : $"{first} - {last}";
 
-            var line1 = $"#{i + 1} {Markup.Escape(chain.Slug)}  {dateInfo}  ({chain.TotalMessages} msgs)";
+            var line1 = $"#{i + 1} {Markup.Escape(title)}  [grey]{dateInfo}  ({chain.TotalMessages} msgs)[/]";
 
             var description = GetChainDescription(chain, 200);
             var line2 = description is not null ? $"   [grey]{Markup.Escape(description)}[/]" : "";
@@ -126,13 +120,23 @@ public static class SearchView
 
         var selected = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
-                .Title("[bold]Select a session chain to explore:[/]")
+                .Title("[bold]Select a session to explore:[/]")
                 .PageSize(15)
                 .AddChoices(choiceList));
 
         if (selected == exitLabel) return null;
 
         return choiceMap.TryGetValue(selected, out var idx) ? idx : null;
+    }
+
+    private static string GetSessionTitle(SessionChain chain)
+    {
+        // Prefer AI summary, fall back to slug
+        var aiSummary = chain.Sessions
+            .Select(s => s.AiSummary)
+            .FirstOrDefault(s => s is not null);
+
+        return aiSummary ?? chain.Slug;
     }
 
     private static string? GetChainDescription(SessionChain chain, int maxLength = 80)
