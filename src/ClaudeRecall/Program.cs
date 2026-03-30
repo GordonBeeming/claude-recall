@@ -124,11 +124,17 @@ if (!regexMode && !noAi && results.Count > 3)
 {
     var candidates = results.Take(20).Select(r =>
     {
+        var firstUserMsg = r.Chain.Sessions
+            .Select(s => s.FirstUserMessage)
+            .FirstOrDefault(m => m is not null);
         var snippets = r.Matches
             .SelectMany(m => m.Messages)
             .SelectMany(m => m.MatchedSnippets)
             .Take(5);
-        return (r.Chain.Sessions[0].SessionId, string.Join("\n", snippets));
+        var context = firstUserMsg is not null
+            ? $"First user message: {firstUserMsg}\n\nMatched snippets:\n{string.Join("\n", snippets)}"
+            : string.Join("\n", snippets);
+        return (r.Chain.Sessions[0].SessionId, context);
     }).ToList();
 
     var validated = await AnsiConsole.Status()
@@ -147,10 +153,13 @@ if (!regexMode && !noAi && results.Count > 3)
             {
                 result.AiReason = v.Reason;
                 result.AiConfidence = v.Confidence;
+                result.AiMatches = v.Matches;
             }
         }
 
+        // Remove results that AI explicitly rejected, keep unvalidated ones (beyond top 20)
         results = results
+            .Where(r => r.AiMatches != false)
             .OrderByDescending(r => r.AiConfidence > 0 ? 1 : 0)
             .ThenByDescending(r => r.AiConfidence)
             .ThenByDescending(r => r.Matches.Sum(m => m.TotalMatches))

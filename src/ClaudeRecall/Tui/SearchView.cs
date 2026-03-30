@@ -96,11 +96,14 @@ public static class SearchView
         for (int i = 0; i < results.Count; i++)
         {
             var r = results[i];
-            var label = $"#{i + 1} {r.Chain.Slug} ({r.Matches.Sum(m => m.TotalMatches)} matches)";
+            var description = GetChainDescription(r.Chain);
+            var descPart = description is not null ? $" - {Markup.Escape(description)}" : "";
+            var label = $"#{i + 1} {Markup.Escape(r.Chain.Slug)}{descPart} ({r.Matches.Sum(m => m.TotalMatches)} matches)";
             choices.Add(label);
         }
 
-        choices.Add("[Exit]");
+        var exitLabel = Markup.Escape("[Exit]");
+        choices.Add(exitLabel);
 
         var selected = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
@@ -108,10 +111,23 @@ public static class SearchView
                 .PageSize(15)
                 .AddChoices(choices));
 
-        if (selected == "[Exit]") return null;
+        if (selected == exitLabel) return null;
 
         var idx = choices.IndexOf(selected);
         return idx >= 0 && idx < results.Count ? idx : null;
+    }
+
+    private static string? GetChainDescription(SessionChain chain)
+    {
+        var firstMsg = chain.Sessions
+            .Select(s => s.FirstUserMessage)
+            .FirstOrDefault(m => m is not null);
+
+        if (firstMsg is null) return null;
+
+        // Take first line, trim to reasonable length
+        var firstLine = firstMsg.ReplaceLineEndings(" ").Trim();
+        return firstLine.Length > 80 ? firstLine[..80] + "..." : firstLine;
     }
 
     private static string ShortenPath(string path)

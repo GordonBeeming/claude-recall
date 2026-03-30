@@ -50,6 +50,7 @@ public static class SessionScanner
         var sessionId = Path.GetFileNameWithoutExtension(filePath);
         string? slug = null;
         string? cwd = null;
+        string? firstUserMessage = null;
         DateTimeOffset? firstTs = null;
         DateTimeOffset? lastTs = null;
         int messageCount = 0;
@@ -75,7 +76,15 @@ public static class SessionScanner
                     cwd ??= msg.Cwd;
 
                     if (msg.Type is "user" or "assistant")
+                    {
                         messageCount++;
+                        if (firstUserMessage is null && msg.Type == "user")
+                        {
+                            var (_, text) = TextExtractor.Extract(msg);
+                            if (!string.IsNullOrWhiteSpace(text))
+                                firstUserMessage = text.Length > 300 ? text[..300] : text;
+                        }
+                    }
                 }
                 catch (JsonException)
                 {
@@ -98,6 +107,7 @@ public static class SessionScanner
             ProjectPath = DecodeProjectPath(Path.GetFileName(projectDir)),
             Slug = slug,
             Cwd = cwd,
+            FirstUserMessage = firstUserMessage,
             FirstTimestamp = firstTs,
             LastTimestamp = lastTs,
             MessageCount = messageCount,
