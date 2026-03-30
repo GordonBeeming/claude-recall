@@ -18,10 +18,15 @@ public static class SessionScanner
         var sessions = new List<SessionInfo>();
         var lockObj = new object();
 
+        // Exclude sessions that are actively being written (e.g. the current Claude session
+        // that launched claude-recall). A file modified in the last 10 seconds is likely active.
+        var activeThreshold = DateTime.UtcNow.AddSeconds(-10);
+
         Parallel.ForEach(projectDirs, projectDir =>
         {
             var jsonlFiles = Directory.GetFiles(projectDir, "*.jsonl")
                 .Where(f => !Path.GetFileName(f).StartsWith("agent-", StringComparison.Ordinal))
+                .Where(f => File.GetLastWriteTimeUtc(f) < activeThreshold)
                 .ToList();
 
             foreach (var file in jsonlFiles)
