@@ -9,14 +9,22 @@ public static class SessionScanner
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".claude", "projects");
 
+    private static readonly string CacheDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "claude-recall");
+
+    private static readonly string CachePath = Path.Combine(CacheDir, "cache.json");
+
     public static List<SessionInfo> ScanAll()
     {
         if (!Directory.Exists(ClaudeProjectsDir))
             return [];
 
+        var cache = LoadCache();
         var projectDirs = Directory.GetDirectories(ClaudeProjectsDir);
         var sessions = new List<SessionInfo>();
         var lockObj = new object();
+        var cacheChanged = false;
 
         // Exclude sessions that are actively being written (e.g. the current Claude session
         // that launched claude-recall). A file modified in the last 10 seconds is likely active.
@@ -31,7 +39,31 @@ public static class SessionScanner
 
             foreach (var file in jsonlFiles)
             {
-                var info = ScanSession(file, projectDir);
+                var sessionId = Path.GetFileNameWithoutExtension(file);
+                var fileSize = new FileInfo(file).Length;
+                var cacheKey = $"{Path.GetFileName(projectDir)}/{sessionId}";
+
+                SessionInfo? info = null;
+
+                if (cache.Entries.TryGetValue(cacheKey, out var cached) && cached.FileSize == fileSize)
+                {
+                    info = FromCache(cached, file, projectDir);
+                }
+
+                if (info is null)
+                {
+                    info = ScanSession(file, projectDir);
+                    if (info is not null)
+                    {
+                        var entry = ToCache(info, fileSize);
+                        lock (lockObj)
+                        {
+                            cache.Entries[cacheKey] = entry;
+                            cacheChanged = true;
+                        }
+                    }
+                }
+
                 if (info is not null)
                 {
                     lock (lockObj)
@@ -41,6 +73,11 @@ public static class SessionScanner
                 }
             }
         });
+
+        if (cacheChanged)
+        {
+            SaveCache(cache);
+        }
 
         return sessions;
     }
@@ -112,6 +149,71 @@ public static class SessionScanner
             LastTimestamp = lastTs,
             MessageCount = messageCount,
         };
+    }
+
+    private static SessionInfo FromCache(SessionCacheEntry cached, string filePath, string projectDir)
+    {
+        return new SessionInfo
+        {
+            SessionId = cached.SessionId,
+            FilePath = filePath,
+            ProjectDir = projectDir,
+            ProjectPath = cached.ProjectPath,
+            Slug = cached.Slug,
+            Cwd = cached.Cwd,
+            FirstUserMessage = cached.FirstUserMessage,
+            FirstTimestamp = cached.FirstTimestamp is not null ? DateTimeOffset.Parse(cached.FirstTimestamp) : null,
+            LastTimestamp = cached.LastTimestamp is not null ? DateTimeOffset.Parse(cached.LastTimestamp) : null,
+            MessageCount = cached.MessageCount,
+        };
+    }
+
+    private static SessionCacheEntry ToCache(SessionInfo info, long fileSize)
+    {
+        return new SessionCacheEntry
+        {
+            SessionId = info.SessionId,
+            FileSize = fileSize,
+            ProjectPath = info.ProjectPath,
+            Slug = info.Slug,
+            Cwd = info.Cwd,
+            FirstUserMessage = info.FirstUserMessage,
+            FirstTimestamp = info.FirstTimestamp?.ToString("o"),
+            LastTimestamp = info.LastTimestamp?.ToString("o"),
+            MessageCount = info.MessageCount,
+        };
+    }
+
+    private static SessionCache LoadCache()
+    {
+        try
+        {
+            if (File.Exists(CachePath))
+            {
+                var json = File.ReadAllText(CachePath);
+                return JsonSerializer.Deserialize(json, SourceGenerationContext.Default.SessionCache) ?? new SessionCache();
+            }
+        }
+        catch
+        {
+            // Corrupt cache, start fresh
+        }
+
+        return new SessionCache();
+    }
+
+    private static void SaveCache(SessionCache cache)
+    {
+        try
+        {
+            Directory.CreateDirectory(CacheDir);
+            var json = JsonSerializer.Serialize(cache, SourceGenerationContext.Default.SessionCache);
+            File.WriteAllText(CachePath, json);
+        }
+        catch
+        {
+            // Non-critical, ignore
+        }
     }
 
     private static string DecodeProjectPath(string dirName)
