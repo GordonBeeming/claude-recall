@@ -9,6 +9,9 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <AssemblyName>claude-recall</AssemblyName>
     <RootNamespace>ClaudeRecall</RootNamespace>
+    <ClaudeRecallVersion Condition="'$(ClaudeRecallVersion)' == ''">0.1.0-dev</ClaudeRecallVersion>
+    <Version>$(ClaudeRecallVersion)</Version>
+    <InformationalVersion>$(ClaudeRecallVersion)</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
