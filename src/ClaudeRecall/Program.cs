@@ -9,6 +9,7 @@ var query = "";
 var regexMode = false;
 var noAi = false;
 var allProjects = false;
+var days = 7;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -23,6 +24,10 @@ for (int i = 0; i < args.Length; i++)
         case "--all-projects":
             allProjects = true;
             break;
+        case "--days" when i + 1 < args.Length && int.TryParse(args[i + 1], out var d):
+            days = d;
+            i++;
+            break;
         case "--help" or "-h":
             AnsiConsole.MarkupLine("[bold]claude-recall[/] — Search your Claude Code session history");
             AnsiConsole.WriteLine();
@@ -32,6 +37,7 @@ for (int i = 0; i < args.Length; i++)
             AnsiConsole.MarkupLine("  --regex         Raw regex search (skip AI term generation)");
             AnsiConsole.MarkupLine("  --no-ai         Skip all AI features");
             AnsiConsole.MarkupLine("  --all-projects  Search all projects (default: current project only)");
+            AnsiConsole.MarkupLine("  --days N        Search last N days (default: 7)");
             AnsiConsole.MarkupLine("  --help, -h      Show this help");
             AnsiConsole.MarkupLine("  --version       Show version information");
             return 0;
@@ -82,7 +88,12 @@ if (!allProjects)
         .ToList();
 }
 
-AnsiConsole.MarkupLine($"[grey]Found {sessions.Count} sessions across {sessions.Select(s => s.ProjectDir).Distinct().Count()} projects[/]");
+var cutoff = DateTimeOffset.UtcNow.AddDays(-days);
+sessions = sessions
+    .Where(s => (s.LastTimestamp ?? s.FirstTimestamp ?? DateTimeOffset.MinValue) >= cutoff)
+    .ToList();
+
+AnsiConsole.MarkupLine($"[grey]Found {sessions.Count} sessions across {sessions.Select(s => s.ProjectDir).Distinct().Count()} projects (last {days} days)[/]");
 
 // Step 2: Build chains
 var chains = ChainBuilder.Build(sessions);
@@ -162,7 +173,7 @@ if (!regexMode && !noAi && results.Count > 3)
             .Where(r => r.AiMatches != false)
             .OrderByDescending(r => r.AiConfidence > 0 ? 1 : 0)
             .ThenByDescending(r => r.AiConfidence)
-            .ThenByDescending(r => r.Matches.Sum(m => m.TotalMatches))
+            .ThenByDescending(r => r.Chain.LastTimestamp ?? DateTimeOffset.MinValue)
             .ToList();
     }
 }

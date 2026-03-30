@@ -45,6 +45,7 @@ If no query is provided, you'll be prompted for one interactively.
 | `--regex` | Raw regex search, skips AI term generation |
 | `--no-ai` | Skip all AI features (works without Claude installed) |
 | `--all-projects` | Search all projects (default: current project only) |
+| `--days N` | Search last N days (default: 7) |
 | `--help`, `-h` | Show help |
 | `--version` | Show version |
 

@@ -91,33 +91,51 @@ public static class SearchView
 
     public static int? PromptForAction(List<SearchResult> results)
     {
-        var choices = new List<string>();
+        var choiceMap = new Dictionary<string, int>();
+
+        var choiceList = new List<string>();
 
         for (int i = 0; i < results.Count; i++)
         {
             var r = results[i];
-            var description = GetChainDescription(r.Chain);
-            var descPart = description is not null ? $" - {Markup.Escape(description)}" : "";
-            var label = $"#{i + 1} {Markup.Escape(r.Chain.Slug)}{descPart} ({r.Matches.Sum(m => m.TotalMatches)} matches)";
-            choices.Add(label);
+            var chain = r.Chain;
+            var first = chain.FirstTimestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "?";
+            var last = chain.LastTimestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "?";
+            var dateInfo = chain.FirstTimestamp?.Date == chain.LastTimestamp?.Date
+                ? first
+                : $"{first} - {last}";
+
+            var line1 = $"#{i + 1} {Markup.Escape(chain.Slug)}  {dateInfo}  ({chain.TotalMessages} msgs)";
+
+            var description = GetChainDescription(chain, 120);
+            var line2 = description is not null ? $"   [grey]{Markup.Escape(description)}[/]" : "";
+
+            var aiReason = r.AiReason is { Length: > 0 } ? $"   [mediumpurple1]AI: {Markup.Escape(r.AiReason)}[/]" : "";
+
+            var parts = new List<string> { line1 };
+            if (line2.Length > 0) parts.Add(line2);
+            if (aiReason.Length > 0) parts.Add(aiReason);
+
+            var label = string.Join("\n", parts);
+            choiceList.Add(label);
+            choiceMap[label] = i;
         }
 
         var exitLabel = Markup.Escape("[Exit]");
-        choices.Add(exitLabel);
+        choiceList.Add(exitLabel);
 
         var selected = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
                 .Title("[bold]Select a session chain to explore:[/]")
                 .PageSize(15)
-                .AddChoices(choices));
+                .AddChoices(choiceList));
 
         if (selected == exitLabel) return null;
 
-        var idx = choices.IndexOf(selected);
-        return idx >= 0 && idx < results.Count ? idx : null;
+        return choiceMap.TryGetValue(selected, out var idx) ? idx : null;
     }
 
-    private static string? GetChainDescription(SessionChain chain)
+    private static string? GetChainDescription(SessionChain chain, int maxLength = 80)
     {
         var firstMsg = chain.Sessions
             .Select(s => s.FirstUserMessage)
@@ -125,9 +143,8 @@ public static class SearchView
 
         if (firstMsg is null) return null;
 
-        // Take first line, trim to reasonable length
         var firstLine = firstMsg.ReplaceLineEndings(" ").Trim();
-        return firstLine.Length > 80 ? firstLine[..80] + "..." : firstLine;
+        return firstLine.Length > maxLength ? firstLine[..maxLength] + "..." : firstLine;
     }
 
     private static string ShortenPath(string path)

@@ -98,7 +98,7 @@ public static class ClaudeAiService
             var psi = new ProcessStartInfo
             {
                 FileName = "claude",
-                ArgumentList = { "-p", prompt, "--output-format", "text" },
+                ArgumentList = { "-p", prompt, "--output-format", "text", "--no-session-persistence" },
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
