@@ -98,18 +98,8 @@ sessions = sessions
     .Where(s => (s.LastTimestamp ?? s.FirstTimestamp ?? DateTimeOffset.MinValue) >= cutoff)
     .ToList();
 
-if (verbose)
-{
-    AnsiConsole.MarkupLine($"[grey]Found {sessions.Count} sessions across {sessions.Select(s => s.ProjectDir).Distinct().Count()} projects (last {days} days)[/]");
-}
-
 // Step 2: Build chains
 var chains = ChainBuilder.Build(sessions);
-
-if (verbose)
-{
-    AnsiConsole.MarkupLine($"[grey]{chains.Count} session chains[/]");
-}
 
 // Step 3: Generate search patterns
 List<string> patterns;
@@ -117,8 +107,6 @@ List<string> patterns;
 if (regexMode || noAi)
 {
     patterns = [query];
-    if (verbose)
-        AnsiConsole.MarkupLine($"[grey]Regex mode: searching for \"{Markup.Escape(query)}\"[/]");
 }
 else
 {
@@ -126,9 +114,6 @@ else
         .Spinner(Spinner.Known.Dots)
         .StartAsync("[blue]Generating search terms...[/]", async _ =>
             await ClaudeAiService.GenerateSearchTerms(query));
-
-    if (verbose)
-        AnsiConsole.MarkupLine($"[grey]Search patterns: {string.Join(", ", patterns.Select(p => Markup.Escape(p)))}[/]");
 }
 
 // Step 4: Search
@@ -141,11 +126,6 @@ await AnsiConsole.Status()
         await Task.Yield();
         results = SearchEngine.Search(chains, patterns);
     });
-
-if (verbose)
-{
-    AnsiConsole.MarkupLine($"[grey]{results.Count} matching chains[/]");
-}
 
 // Step 5: AI validation (if enabled and we have results to narrow down)
 if (!regexMode && !noAi && results.Count > 3)
@@ -234,6 +214,7 @@ AnsiConsole.WriteLine();
 
 // Step 7: Display results
 SearchView.RenderResults(results, query, verbose);
+SearchView.RenderResultsSummary(results);
 
 // Step 8: Interactive selection
 while (true)

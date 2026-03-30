@@ -83,6 +83,32 @@ public static class SearchView
         AnsiConsole.Write(tree);
     }
 
+    public static void RenderResultsSummary(List<SearchResult> results)
+    {
+        for (int i = 0; i < results.Count; i++)
+        {
+            var r = results[i];
+            var chain = r.Chain;
+            var title = GetSessionTitle(chain);
+            var first = FormatFriendlyDate(chain.FirstTimestamp);
+            var last = FormatFriendlyDate(chain.LastTimestamp);
+            var dateInfo = chain.FirstTimestamp?.Date == chain.LastTimestamp?.Date
+                ? first
+                : $"{first} - {last}";
+
+            AnsiConsole.MarkupLine($"[blue bold]#{i + 1}[/] [bold]{Markup.Escape(title)}[/]  [grey]{dateInfo}  ({chain.TotalMessages} msgs)[/]");
+
+            var description = GetChainDescription(chain, 200);
+            if (description is not null)
+                AnsiConsole.MarkupLine($"   [grey]{Markup.Escape(description)}[/]");
+
+            if (r.AiReason is { Length: > 0 })
+                AnsiConsole.MarkupLine($"   [mediumpurple1]AI: {Markup.Escape(r.AiReason)}[/]");
+        }
+
+        AnsiConsole.WriteLine();
+    }
+
     public static int? PromptForAction(List<SearchResult> results)
     {
         var choiceMap = new Dictionary<string, int>();
@@ -99,18 +125,7 @@ public static class SearchView
                 ? first
                 : $"{first} - {last}";
 
-            var line1 = $"#{i + 1} {Markup.Escape(title)}  [grey]{dateInfo}  ({chain.TotalMessages} msgs)[/]";
-
-            var description = GetChainDescription(chain, 200);
-            var line2 = description is not null ? $"   [grey]{Markup.Escape(description)}[/]" : "";
-
-            var aiReason = r.AiReason is { Length: > 0 } ? $"   [mediumpurple1]AI: {Markup.Escape(r.AiReason)}[/]" : "";
-
-            var parts = new List<string> { line1 };
-            if (line2.Length > 0) parts.Add(line2);
-            if (aiReason.Length > 0) parts.Add(aiReason);
-
-            var label = string.Join("\n", parts);
+            var label = $"#{i + 1} {Markup.Escape(title)}  [grey]{dateInfo}  ({chain.TotalMessages} msgs)[/]";
             choiceList.Add(label);
             choiceMap[label] = i;
         }
@@ -143,7 +158,7 @@ public static class SearchView
     {
         var firstMsg = chain.Sessions
             .Select(s => s.FirstUserMessage)
-            .FirstOrDefault(m => m is not null);
+            .FirstOrDefault(m => m is not null && !m.TrimStart().StartsWith('<'));
 
         if (firstMsg is null) return null;
 
